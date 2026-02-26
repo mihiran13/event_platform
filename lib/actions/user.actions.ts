@@ -15,9 +15,12 @@ export async function createUser(user: CreateUserParams) {
     await connectToDatabase()
 
     const newUser = await User.create(user)
+    console.log('✅ User created in MongoDB:', newUser)
     return JSON.parse(JSON.stringify(newUser))
   } catch (error) {
+    console.error('❌ Error creating user in MongoDB:', error)
     handleError(error)
+    return null
   }
 }
 
