@@ -2,7 +2,7 @@ import { Webhook } from 'svix'
 import { headers } from 'next/headers'
 import { WebhookEvent } from '@clerk/nextjs/server'
 import { createUser, deleteUser, updateUser } from '@/lib/actions/user.actions'
-import { clerkClient } from '@clerk/nextjs'
+import { clerkClient } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server'
  
 export async function POST(req: Request) {
@@ -61,24 +61,21 @@ export async function POST(req: Request) {
       clerkId: id,
       email: email_addresses[0].email_address,
       username: username!,
-      firstName: first_name,
-      lastName: last_name,
+      firstName: first_name || "",
+      lastName: last_name || "",
       photo: image_url,
     }
 
     const newUser = await createUser(user);
 
-   // 1. Get the client instance first
-const client = await clerkClient(); 
-
-if (newUser) {
-  // 2. Use the client to update metadata
-  await client.users.updateUserMetadata(id, {
-    publicMetadata: {
-      userId: newUser._id
+    if (newUser) {
+      const client = await clerkClient();
+      await client.users.updateUserMetadata(id, {
+        publicMetadata: {
+          userId: newUser._id
+        }
+      })
     }
-  })
-}
 
     return NextResponse.json({ message: 'OK', user: newUser })
   }
