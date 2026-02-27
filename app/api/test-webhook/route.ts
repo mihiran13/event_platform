@@ -1,41 +1,58 @@
 import { NextResponse } from 'next/server'
-import { connectToDatabase } from '@/lib/database'
-import User from '@/lib/database/models/user.model'
+
+interface TestStep {
+  step: string
+  success: boolean
+  message: string
+  data?: Record<string, unknown>
+}
 
 export async function GET() {
   console.log('🧪 Test endpoint hit!')
   
   const results = {
     timestamp: new Date().toISOString(),
-    steps: [] as { step: string; success: boolean; message: string; data?: any }[],
+    steps: [] as TestStep[],
   }
 
   // Step 1: Check environment variables
-  const envCheck = {
+  const envCheck: Record<string, boolean> = {
     MONGODB_URI: !!process.env.MONGODB_URI,
     WEBHOOK_SECRET: !!process.env.WEBHOOK_SECRET,
     CLERK_SECRET_KEY: !!process.env.CLERK_SECRET_KEY,
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
   }
   
+  const allEnvSet = Object.values(envCheck).every(Boolean)
+  const missingEnv = Object.entries(envCheck)
+    .filter(([, v]) => !v)
+    .map(([k]) => k)
+    .join(', ')
+  
   results.steps.push({
     step: 'Environment Variables Check',
-    success: Object.values(envCheck).every(Boolean),
-    message: Object.values(envCheck).every(Boolean) 
+    success: allEnvSet,
+    message: allEnvSet 
       ? 'All required environment variables are set' 
-      : 'Some environment variables are missing',
+      : 'Missing: ' + missingEnv,
     data: envCheck,
   })
 
+  // If env vars missing, return early
+  if (!allEnvSet) {
+    return NextResponse.json(results)
+  }
+
   // Step 2: Test MongoDB Connection
   try {
+    const { connectToDatabase } = await import('@/lib/database')
     await connectToDatabase()
     results.steps.push({
       step: 'MongoDB Connection',
       success: true,
       message: 'Successfully connected to MongoDB',
     })
-  } catch (error) {
+  } catch (error: unknown) {
     results.steps.push({
       step: 'MongoDB Connection',
       success: false,
@@ -44,16 +61,18 @@ export async function GET() {
     return NextResponse.json(results)
   }
 
-  // Step 3: Check if users collection exists and count users
+  // Step 3: Check if users collection exists
   try {
+    const userModule = await import('@/lib/database/models/user.model')
+    const User = userModule.default
     const userCount = await User.countDocuments()
     results.steps.push({
       step: 'Users Collection Check',
       success: true,
       message: `Users collection exists with ${userCount} user(s)`,
-      data: { userCount },
+      data: { userCount: userCount },
     })
-  } catch (error) {
+  } catch (error: unknown) {
     results.steps.push({
       step: 'Users Collection Check',
       success: false,
@@ -61,8 +80,11 @@ export async function GET() {
     })
   }
 
-  // Step 4: Test creating a dummy user (will be deleted)
+  // Step 4: Test creating a dummy user
   try {
+    const userModule = await import('@/lib/database/models/user.model')
+    const User = userModule.default
+    
     const testUser = {
       clerkId: `test_${Date.now()}`,
       email: `test_${Date.now()}@test.com`,
@@ -77,17 +99,19 @@ export async function GET() {
       step: 'Create Test User',
       success: true,
       message: 'Successfully created a test user',
-      data: { userId: createdUser._id, clerkId: createdUser.clerkId },
+      data: { userId: createdUser._id?.toString(), clerkId: createdUser.clerkId },
     })
 
-    // Clean up - delete the test user
-    await User.findByIdAndDelete(createdUser._id)
-    results.steps.push({
-      step: 'Cleanup Test User',
-      success: true,
-      message: 'Test user deleted successfully',
-    })
-  } catch (error) {
+    // Clean up
+    if (createdUser._id) {
+      await User.findByIdAndDelete(createdUser._id)
+      results.steps.push({
+        step: 'Cleanup Test User',
+        success: true,
+        message: 'Test user deleted successfully',
+      })
+    }
+  } catch (error: unknown) {
     results.steps.push({
       step: 'Create Test User',
       success: false,
@@ -96,23 +120,4 @@ export async function GET() {
   }
 
   return NextResponse.json(results, { status: 200 })
-}
-
-export async function POST(request: Request) {
-  console.log('🧪 Test POST endpoint hit!')
-  
-  try {
-    const body = await request.json()
-    
-    return NextResponse.json({
-      message: 'POST request received successfully',
-      receivedData: body,
-      timestamp: new Date().toISOString(),
-    })
-  } catch (error) {
-    return NextResponse.json({
-      error: 'Failed to parse request body',
-      message: error instanceof Error ? error.message : 'Unknown error',
-    }, { status: 400 })
-  }
 }
